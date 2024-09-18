@@ -6,6 +6,9 @@ const mongoSanitize = require("express-mongo-sanitize");
 const xss = require("xss-clean");
 
 const userRouter = require("./routes/userRoute");
+const leaveRequestRouter = require("./routes/leaveRequestRoute");
+const taskRouter = require("./routes/taskRoute");
+const attendanceLogRouter = require("./routes/attendanceLogRoute");
 const AppError = require("./utils/appError");
 const globalErrorHandler = require("./controllers/errorController");
 
@@ -26,7 +29,11 @@ app.use(mongoSanitize());
 //Data sanitization against xss attacks
 app.use(xss());
 
+//Defined routes here
 app.use("/api/v1/users", userRouter);
+app.use("/api/v1/leave-requests", leaveRequestRouter);
+app.use("/api/v1/tasks", taskRouter);
+app.use("/api/v1/attendance-logs", attendanceLogRouter);
 
 //Undefined Routes Handler
 app.all("*", (req, res, next) => {

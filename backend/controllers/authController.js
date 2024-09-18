@@ -2,6 +2,7 @@ const catchAsync = require("../utils/catchAsync");
 const User = require("../models/userModel");
 const jwt = require("jsonwebtoken");
 const AppError = require("../utils/appError");
+const sendEmail = require("../utils/email");
 
 const getJwtToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
@@ -72,4 +73,125 @@ exports.signInUser = catchAsync(async (req, res, next) => {
   }
 
   createSendToken(user, res);
+});
+
+exports.forgotPassword = catchAsync(async (req, res, next) => {
+  if (!req.body.email) {
+    return next(new AppError("Please, provide your email first!", 400));
+  }
+
+  //Get the email address of user
+  const user = await User.findOne({ email: req.body.email });
+
+  if (!user) {
+    return next(new AppError("User doesn't exist!", 404));
+  }
+  const resetToken = user.createPasswordResetToken();
+
+  await user.save({ validateBeforeSave: false });
+
+  //Send the password reset token to user's email
+  let resetUrl = `${req.protocol}://${req.get(
+    "host"
+  )}/api/v1/users/resetPassword/${resetToken}`;
+
+  const message = `Your password reset token provided: \n${resetUrl}`;
+
+  try {
+    await sendEmail({
+      email: user.email,
+      subject: "Forgot Password",
+      message,
+    });
+
+    res.status(200).json({
+      status: "success",
+      message: "Reset token sent to the user's email!",
+    });
+  } catch (error) {
+    //to see the error
+    console.log(error);
+
+    user.passwordResetToken = undefined;
+    user.passwordResetExpires = undefined;
+
+    await user.save({ validateBeforeSave: false });
+
+    return next(
+      new AppError(
+        "There is an error occured to sending the email. Try again later!",
+        500
+      )
+    );
+  }
+});
+
+exports.resetPassword = catchAsync(async (req, res, next) => {
+  //Get the user based on the token
+  const hashedToken = genCryptoHash(req.params.token);
+
+  const user = await User.findOne({
+    passwordResetToken: hashedToken,
+    passwordResetExpires: { $gt: Date.now() },
+  });
+
+  if (!user) {
+    return next(new AppError("Token is not valid or expired already!", 400));
+  }
+
+  //Get the new password and confirm it
+  const { password, passwordConfirm } = req.body;
+
+  if (!password || !passwordConfirm) {
+    return next(new AppError("Please, fill up the necessary fields!", 400));
+  }
+
+  user.password = password;
+  user.passwordConfirm = passwordConfirm;
+  user.passwordChangedAt = Date.now();
+  user.passwordResetToken = undefined;
+  user.passwordResetExpires = undefined;
+
+  await user.save();
+
+  const token = getJwtToken(user._id);
+
+  res.status(200).json({
+    status: "success",
+    message: "Password changed successfully!",
+    token,
+  });
+});
+
+exports.updateCurrentUserPassword = catchAsync(async (req, res, next) => {
+  //Get the user first
+  const user = await User.findById(req.user.id);
+
+  //Get the current password and then the new password
+  const { currentPassword, newPassword, newPasswordConfirm } = req.body;
+
+  if (!currentPassword || !newPassword || !newPasswordConfirm) {
+    return next(new AppError("Please, fill up the necessary fields!", 400));
+  }
+
+  const isMatch = await user.matchPassword(currentPassword, user.password);
+
+  if (!isMatch) {
+    next(new AppError("Invalid Credentials!", 401));
+  }
+
+  if (newPassword !== newPasswordConfirm) {
+    return next(new AppError("Password didn't match!", 400));
+  }
+
+  user.password = newPassword;
+  user.passwordConfirm = newPasswordConfirm;
+  user.passwordChangedAt = Date.now();
+
+  await user.save();
+
+  res.status(200).json({
+    status: "success",
+    message: "Password updated successfully!",
+  });
 });

@@ -7,9 +7,7 @@ const DB = process.env.DATABASE_REMOTE.replace(
 
 module.exports = connectDB = () =>
   mongoose
-    .connect(DB, {
-      useNewUrlParser: true,
-    })
+    .connect(DB)
     .then((con) => {
       console.log("Database connected!");
     })
